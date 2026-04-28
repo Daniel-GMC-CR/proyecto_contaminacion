@@ -1,105 +1,230 @@
 import os
+import cv2
 import numpy as np
 import pandas as pd
-from PIL import Image
 
-# ----------------------------
-# Rutas
-# ----------------------------
+RAW_DIR="Fotos sin procesar"
+PROC_DIR="Fotos procesadas"
+CSV_DIR="dataset"
 
-RAW_DIR = "Fotos sin procesar"
-PROC_DIR = "Fotos procesadas"
-CSV_DIR = "dataset"
-
+os.makedirs(PROC_DIR,exist_ok=True)
 os.makedirs(CSV_DIR,exist_ok=True)
 
-categorias = {
+categorias={
     "Arroz":1,
     "Clip":0
 }
 
 datos=[]
 
-# ------------------------------------
-# Procesamiento
-# ------------------------------------
+
+
+def vectorizar(img,label):
+
+    matriz=np.where(
+        img==255,
+        1,
+        0
+    )
+
+    fila=list(
+        matriz.flatten()
+    )
+
+    fila.append(label)
+
+    datos.append(fila)
+
+
+
+def procesar(img):
+
+    img=cv2.resize(
+        img,
+        (128,128)
+    )
+
+
+    fondo=cv2.GaussianBlur(
+        img,
+        (25,25),
+        0
+    )
+
+    corregida=cv2.divide(
+        img,
+        fondo,
+        scale=255
+    )
+
+
+    _,binaria=cv2.threshold(
+        corregida,
+        0,
+        255,
+        cv2.THRESH_BINARY+
+        cv2.THRESH_OTSU
+    )
+
+
+    bordes=cv2.Canny(
+        corregida,
+        50,
+        150
+    )
+
+    bordes=255-bordes
+
+
+    combinada=np.minimum(
+        binaria,
+        bordes
+    )
+
+
+    # kernel 1x1 como usted decidió
+    kernel=np.ones(
+        (1,1),
+        np.uint8
+    )
+
+    combinada=cv2.morphologyEx(
+        combinada,
+        cv2.MORPH_CLOSE,
+        kernel
+    )
+
+
+    return combinada
+
+
 
 for clase,label in categorias.items():
 
-    entrada=os.path.join(RAW_DIR,clase)
-    salida=os.path.join(PROC_DIR,clase)
+    entrada=os.path.join(
+        RAW_DIR,
+        clase
+    )
 
-    os.makedirs(salida,exist_ok=True)
+    salida=os.path.join(
+        PROC_DIR,
+        clase
+    )
+
+    os.makedirs(
+        salida,
+        exist_ok=True
+    )
+
+
 
     for archivo in os.listdir(entrada):
 
-        ruta=os.path.join(entrada,archivo)
+        ruta=os.path.join(
+            entrada,
+            archivo
+        )
 
-        try:
+        img=cv2.imread(
+            ruta,
+            cv2.IMREAD_GRAYSCALE
+        )
 
-            img=Image.open(ruta)
-
-            # escala de grises
-            img=img.convert("L")
-
-            # tamaño requerido
-            img=img.resize((128,128))
-
-            # binarización
-            umbral=200
-
-            img_binaria=img.point(
-                lambda p:255 if p>umbral else 0
-            )
-
-            # guardar procesada
-            img_binaria.save(
-                os.path.join(salida,archivo)
-            )
-
-            # matriz 1 y 0
-            matriz=np.array(img_binaria)
-
-            matriz=np.where(
-                matriz==255,
-                1,
-                0
-            )
-
-            vector=matriz.flatten()
-
-            fila=list(vector)
-            fila.append(label)
-
-            datos.append(fila)
-
-        except Exception as e:
-            print(
-                f"Error en {archivo}: {e}"
-            )
+        if img is None:
+            continue
 
 
-# --------------------------------
-# CSV final
-# --------------------------------
+
+        base=procesar(img)
+
+        cv2.imwrite(
+            os.path.join(
+                salida,
+                archivo
+            ),
+            base
+        )
+
+
+        # original
+        vectorizar(
+            base,
+            label
+        )
+
+
+        # rotación 90
+        rot1=np.rot90(base)
+
+        vectorizar(
+            rot1,
+            label
+        )
+
+
+        # rotación 180
+        rot2=np.rot90(
+            base,
+            2
+        )
+
+        vectorizar(
+            rot2,
+            label
+        )
+
+
+        # espejo horizontal
+        flip=cv2.flip(
+            base,
+            1
+        )
+
+        vectorizar(
+            flip,
+            label
+        )
+
+
+        # pequeño desplazamiento
+        M=np.float32([
+            [1,0,3],
+            [0,1,3]
+        ])
+
+        shift=cv2.warpAffine(
+            base,
+            M,
+            (128,128),
+            borderValue=255
+        )
+
+        vectorizar(
+            shift,
+            label
+        )
+
+
 
 columnas=[
-f'pixel_{i}'
+f"pixel_{i}"
 for i in range(16384)
 ]
 
-columnas.append("label")
+columnas.append(
+"label"
+)
 
 df=pd.DataFrame(
-    datos,
-    columns=columnas
+datos,
+columns=columnas
 )
 
 df.to_csv(
-    "dataset/dataset.csv",
-    index=False
+"dataset/dataset.csv",
+index=False
 )
 
 print(
-"Dataset creado correctamente"
+"Dataset aumentado generado"
 )
