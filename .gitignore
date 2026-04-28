@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+# Ignorar carpeta reporteLaTeX dentro de reports
+reports/reporteLaTeX/
